@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from app.algorithms.fcfs import FCFSScheduler
 from app.algorithms.priorities import PriorityQueueScheduler
@@ -153,13 +153,28 @@ class MultilevelQueueEngine:
         self.force_new_segment = True
         return process, queue_index
 
-    def _preempt_current(self) -> None:
+    def _preempt_current(self, higher_priority_queue: int | None = None) -> None:
         if self.current_process is None or self.current_queue is None:
             return
-        self.schedulers[self.current_queue].add_front(self.current_process)
-        self.current_process.state = ProcessState.READY
-        self.current_process.ready_since = self.time
-        self._log(f"{self.current_process.name} es desplazado por una cola de mayor prioridad ({self._queue_algorithm_name(self.current_queue)})")
+        preempted_queue = self.current_queue
+        preempted_process = self.current_process
+        # Devolver el proceso a su cola conservando el quantum residual (si es RR)
+        self.schedulers[preempted_queue].add_front(preempted_process)
+        preempted_process.state = ProcessState.READY
+        preempted_process.ready_since = self.time
+        # Construir mensaje de log con la cola que provocó la apropiación
+        if higher_priority_queue is not None:
+            cause_name = self._queue_algorithm_name(higher_priority_queue)
+        else:
+            cause_name = "cola de mayor prioridad"
+        preempted_name = self._queue_algorithm_name(preempted_queue)
+        quantum_info = ""
+        if preempted_queue == 2:
+            quantum_info = f" (quantum residual: {preempted_process.remaining_quantum} u.t.)"
+        self._log(
+            f"{preempted_process.name} es desplazado de {preempted_name}"
+            f" por proceso de mayor prioridad en {cause_name}{quantum_info}"
+        )
         self.current_process = None
         self.current_queue = None
         self.force_new_segment = True
@@ -263,6 +278,30 @@ class MultilevelQueueEngine:
             self.schedulers[process.queue_index].add(process)
             self._log(f"{process.name} vuelve a cola {algo_name} para ejecutar CPU")
 
+    def _should_preempt(self) -> tuple[bool, int | None]:
+        if self.current_process is None or self.current_queue is None:
+            return False, None
+
+        highest_queue = self._highest_ready_queue()
+        if highest_queue is None:
+            return False, None
+
+        # 1. Preempción entre colas de distinta prioridad (índice menor = mayor prioridad)
+        if highest_queue < self.current_queue:
+            return True, highest_queue
+
+        # 2. Preempción dentro de la Cola de Prioridades (Cola 1) por prioridad del proceso
+        if self.current_queue == 1 and highest_queue == 1:
+            highest_ready_proc = self.schedulers[1].pop_next()
+            if highest_ready_proc is not None:
+                self.schedulers[1].add_front(highest_ready_proc)
+                curr_prio = self.current_process.priority if self.current_process.priority is not None else 10_000
+                ready_prio = highest_ready_proc.priority if highest_ready_proc.priority is not None else 10_000
+                if ready_prio < curr_prio:
+                    return True, 1
+
+        return False, None
+
     def step(self) -> list[str]:
         if self.finished:
             return [f"Tiempo {self.time}: simulación finalizada"]
@@ -273,9 +312,9 @@ class MultilevelQueueEngine:
         self._record_io_execution(self.time)
 
         if self.current_process is not None:
-            highest_ready = self._highest_ready_queue()
-            if highest_ready is not None and highest_ready < (self.current_queue or 0):
-                self._preempt_current()
+            should_preempt, higher_queue = self._should_preempt()
+            if should_preempt:
+                self._preempt_current(higher_priority_queue=higher_queue)
 
         if self.current_process is None:
             self.current_process, self.current_queue = self._dispatch_next()
