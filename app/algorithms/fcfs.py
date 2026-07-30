@@ -1,4 +1,4 @@
-"""First-Come, First-Served scheduler for queue 3."""
+"""Planificador First-Come, First-Served (FCFS) para la cola 3."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ from app.models.process import Process
 
 
 class FCFSScheduler(BaseQueueScheduler):
+    """Cola FIFO. Unicidad garantizada por BaseQueueScheduler."""
+
     def pop_next(self) -> Process | None:
         if not self.ready:
             return None

@@ -1,1 +1,1 @@
-"""UI package."""
+"""Paquete de interfaz de usuario."""

@@ -1,4 +1,4 @@
-"""UI and simulation constants."""
+"""Constantes de interfaz y simulación."""
 
 from __future__ import annotations
 

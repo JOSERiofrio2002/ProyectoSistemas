@@ -29,8 +29,8 @@ class TestMultilevelPreemption(unittest.TestCase):
         self.assertEqual(engine.current_process.name, "P1")
         self.assertEqual(engine.current_queue, 1)
 
-        # P2 should be back in Queue 2 with remaining quantum 2 and remaining burst 4
-        self.assertEqual(p2.remaining_quantum, 2)
+        # P2 should be back in Queue 2 at the END with quantum reset to default 4
+        self.assertEqual(p2.remaining_quantum, 4)
         self.assertEqual(p2.remaining_in_burst, 4)
 
     def test_preemption_on_io_unblock(self):
@@ -49,10 +49,10 @@ class TestMultilevelPreemption(unittest.TestCase):
 
         engine.step()
 
-        # At t=4, P1 unblocks from IO and preempts P2
+        # At t=4, P1 unblocks from IO and preempts P2 (P2 va al FINAL, quantum reset)
         self.assertIsNotNone(engine.current_process)
         self.assertEqual(engine.current_process.name, "P1")
-        self.assertEqual(p2.remaining_quantum, 1)
+        self.assertEqual(p2.remaining_quantum, 4)
 
     def test_quantum_preserved_and_resumed(self):
         """Test that preempted RR process retains its quantum and resumes after higher-priority process finishes."""

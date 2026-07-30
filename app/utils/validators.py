@@ -1,4 +1,4 @@
-"""Input validation and parsing helpers."""
+"""Validación de entrada y helpers de análisis."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from app.models.process import Burst, Process
 
 
 def parse_positive_int(value: str, field_name: str, allow_zero: bool = False) -> int:
-    """Parse a positive integer, raising ValueError with a readable message."""
+    """Analiza un entero positivo, lanzando ValueError con mensaje legible."""
 
     try:
         number = int(value)
@@ -25,7 +25,7 @@ def parse_positive_int(value: str, field_name: str, allow_zero: bool = False) ->
 
 
 def parse_burst_sequence(sequence_text: str, cpu_value: int | None = None, io_value: int | None = None) -> list[Burst]:
-    """Parse a flexible CPU/IO sequence."""
+    """Analiza una secuencia flexible de CPU/E/S."""
 
     text = sequence_text.strip()
     if not text:
@@ -68,7 +68,7 @@ def parse_burst_sequence(sequence_text: str, cpu_value: int | None = None, io_va
 
 
 def parse_burst_rows(rows: Sequence[tuple[str, str]]) -> list[Burst]:
-    """Parse a list of explicit burst rows from the UI."""
+    """Analiza lista de ráfagas explícitas desde la UI."""
 
     bursts: list[Burst] = []
     expected_kind = BurstType.CPU
@@ -99,7 +99,7 @@ def parse_burst_rows(rows: Sequence[tuple[str, str]]) -> list[Burst]:
 
 
 def parse_dash_int_list(value: str, field_name: str) -> list[int]:
-    """Parse a dash-separated integer list like `2-5-7`."""
+    """Analiza lista de enteros separados por guión como `2-5-7`."""
 
     text = value.strip()
     if not text:
@@ -174,12 +174,12 @@ LABEL_TO_PROCESS_TYPE = {
 
 
 def process_type_display_label(process_type: ProcessType) -> str:
-    """Return the user-friendly dropdown label for a process type."""
+    """Retorna etiqueta visible del desplegable para tipo de proceso."""
     return PROCESS_TYPE_LABELS.get(process_type, process_type.value)
 
 
 def process_type_from_label(label: str) -> ProcessType:
-    """Convert a visible label into a process type."""
+    """Convierte etiqueta visible en tipo de proceso."""
     clean_label = label.strip()
     if clean_label in LABEL_TO_PROCESS_TYPE:
         return LABEL_TO_PROCESS_TYPE[clean_label]
@@ -191,7 +191,7 @@ def process_type_from_label(label: str) -> ProcessType:
 
 
 def is_priority_algorithm(type_value: str | ProcessType) -> bool:
-    """Return True if the algorithm is priority-based (e.g. Prioridades/Multimedia)."""
+    """Retorna True si el algoritmo es basado en prioridades."""
     if isinstance(type_value, ProcessType):
         return type_value == ProcessType.MULTIMEDIA
     val = str(type_value).lower()
@@ -199,7 +199,7 @@ def is_priority_algorithm(type_value: str | ProcessType) -> bool:
 
 
 def is_round_robin_algorithm(type_value: str | ProcessType) -> bool:
-    """Return True if the algorithm is Round Robin (e.g. Round Robin/Interactivos/RR)."""
+    """Retorna True si el algoritmo es Round Robin."""
     if isinstance(type_value, ProcessType):
         return type_value == ProcessType.INTERACTIVE
     val = str(type_value).lower()
@@ -209,7 +209,7 @@ def is_round_robin_algorithm(type_value: str | ProcessType) -> bool:
 
 
 def get_next_process_name(existing_names: Sequence[str]) -> str:
-    """Calculate the next automatic process name like P1, P2, P3..."""
+    """Calcula el siguiente nombre automático (P1, P2, P3...)."""
     nums: list[int] = []
     for name in existing_names:
         match = re.search(r"P(\d+)", name, re.IGNORECASE)
@@ -220,7 +220,7 @@ def get_next_process_name(existing_names: Sequence[str]) -> str:
 
 
 def validate_process_name(name: str, existing_names: Sequence[str], current_name: str | None = None) -> None:
-    """Prevent duplicate names and empty names."""
+    """Evita nombres duplicados y vacíos."""
 
     clean_name = name.strip()
     if not clean_name:
@@ -234,7 +234,7 @@ def validate_process_name(name: str, existing_names: Sequence[str], current_name
 
 
 def process_summary_values(process: Process) -> tuple[str, str, str, str, str, str, str, str]:
-    """Return the values displayed in the process table."""
+    """Retorna los valores mostrados en la tabla de procesos."""
 
     priority = "-" if process.priority is None else str(process.priority)
     quantum = "-" if process.quantum is None else str(process.quantum)

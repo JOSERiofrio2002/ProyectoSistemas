@@ -1,4 +1,4 @@
-"""Entry point for the desktop scheduler simulator."""
+"""Punto de entrada para el simulador de planificación."""
 
 from app.ui.main_window import run_app
 

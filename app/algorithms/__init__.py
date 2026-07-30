@@ -1,1 +1,1 @@
-"""Scheduling algorithms package."""
+"""Paquete de algoritmos de planificación."""

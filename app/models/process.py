@@ -1,4 +1,4 @@
-"""Process model and burst helpers."""
+"""Modelo de proceso y helpers de ráfagas."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from app.models.enums import BurstType, ProcessState, ProcessType
 
 @dataclass(slots=True)
 class Burst:
-    """Represents a CPU or IO burst."""
+    """Representa una ráfaga de CPU o E/S."""
 
     kind: BurstType
     duration: int
@@ -18,7 +18,7 @@ class Burst:
 
 @dataclass
 class Process:
-    """Runtime process model used by the simulator and UI."""
+    """Modelo de proceso en tiempo de ejecución usado por el simulador y la UI."""
 
     name: str
     arrival_time: int
@@ -45,7 +45,7 @@ class Process:
         self.reset_runtime()
 
     def reset_runtime(self) -> None:
-        """Restore the process to its initial state before a simulation."""
+        """Restaura el proceso a su estado inicial antes de una simulación."""
 
         self.state = ProcessState.NEW
         self.current_burst_index = 0
@@ -91,6 +91,18 @@ class Process:
             return 0
         return self.remaining_in_burst
 
+    def remaining_total_cpu(self) -> int:
+        """Retorna la duración total restante de CPU en todas las ráfagas futuras de este proceso."""
+        total = 0
+        for i in range(self.current_burst_index, len(self.bursts)):
+            b = self.bursts[i]
+            if b.kind == BurstType.CPU:
+                if i == self.current_burst_index:
+                    total += max(0, self.remaining_in_burst)
+                else:
+                    total += b.duration
+        return total
+
     def advance_to_next_burst(self) -> None:
         self.current_burst_index += 1
         if self.current_burst_index < len(self.bursts):
@@ -108,7 +120,7 @@ class Process:
         return sum(1 for b in self.bursts if b.kind == BurstType.IO)
 
     def io_operation_points(self) -> list[int]:
-        """Return CPU instants where each IO operation starts."""
+        """Retorna los instantes de CPU donde comienza cada operación de E/S."""
 
         points: list[int] = []
         cpu_elapsed = 0
@@ -120,6 +132,6 @@ class Process:
         return points
 
     def io_durations(self) -> list[int]:
-        """Return all IO burst durations."""
+        """Retorna todas las duraciones de las ráfagas de E/S."""
 
         return [burst.duration for burst in self.bursts if burst.kind == BurstType.IO]

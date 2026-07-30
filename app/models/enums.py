@@ -1,4 +1,4 @@
-"""Shared enums used by the simulator."""
+"""Enums compartidos usados por el simulador."""
 
 from __future__ import annotations
 

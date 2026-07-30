@@ -1,4 +1,4 @@
-"""Main application window and all visual components."""
+"""Ventana principal con todos los componentes visuales."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import ttkbootstrap as tb
 from app.models.enums import BurstType, ProcessType
 from app.models.enums import ProcessState
 from app.models.process import Burst, Process
-from app.simulator.engine import MultilevelQueueEngine
+from app.simulator.engine import ExecutionSegment, MultilevelQueueEngine
 from app.ui.process_dialog import ProcessDialog
 from app.utils.constants import DEFAULT_THEME, QUEUE_LABELS, STATE_COLORS
 from app.utils.validators import (
@@ -70,13 +70,9 @@ class MainWindow:
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
 
-        top_split = tb.Panedwindow(right, orient=tk.HORIZONTAL)
-        top_split.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
-
-        self.table_frame = tb.Frame(top_split, padding=8)
-        self.queue_frame = tb.Frame(top_split, padding=8)
-        top_split.add(self.table_frame, weight=3)
-        top_split.add(self.queue_frame, weight=2)
+        self.table_frame = tb.Frame(right, padding=8)
+        self.table_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
+        right.rowconfigure(0, weight=1)
 
         bottom_tabs = tb.Notebook(right)
         bottom_tabs.grid(row=1, column=0, sticky="nsew")
@@ -90,7 +86,6 @@ class MainWindow:
         bottom_tabs.add(self.stats_tab, text="Tiempos de Espera y Ejecución")
 
         self._build_process_table(self.table_frame)
-        self._build_queue_panel(self.queue_frame)
         self._build_gantt_panel(self.gantt_tab)
         self._build_console_panel(self.console_tab)
         self._build_stats_panel(self.stats_tab)
@@ -206,7 +201,6 @@ class MainWindow:
         header = tb.Label(parent, text="Colas de planificación y E/S", style="Section.TLabel")
         header.pack(anchor="w", pady=(0, 8))
 
-        # Scrollable area avoids overlap when many processes are displayed.
         body = tb.Frame(parent)
         body.pack(fill="both", expand=True)
         body.rowconfigure(0, weight=1)
@@ -488,6 +482,7 @@ class MainWindow:
             self.timer_id = self.root.after(self.step_delay_ms.get(), self._schedule_next_step)
         else:
             self.auto_running = False
+            messagebox.showinfo("Simulación", "¡Simulación finalizada!")
 
     def pause_auto(self) -> None:
         self.auto_running = False
@@ -509,7 +504,6 @@ class MainWindow:
 
     def refresh_all(self) -> None:
         self._refresh_table()
-        self._refresh_queues()
         self._refresh_gantt()
         self._refresh_stats()
         self._refresh_console()
@@ -535,55 +529,62 @@ class MainWindow:
 
             snapshot = self.engine.queue_snapshot(queue_index)
 
-            order_names: list[str] = []
+            order_parts: list[str] = []
             if self.engine.current_process is not None and self.engine.current_queue == queue_index:
                 p = self.engine.current_process
-                p_str = f"▶ {p.name} (P:{p.priority})" if p.priority is not None else f"▶ {p.name}"
-                order_names.append(p_str)
-            for process in snapshot:
-                p_str = f"{process.name} (P:{process.priority})" if process.priority is not None else process.name
-                order_names.append(p_str)
-            if order_names:
-                order_label.configure(text="Orden actual: " + " | ".join(order_names), foreground="#dce6f2")
-            else:
-                order_label.configure(text="Orden actual: (vacía)", foreground="#9fb0c2")
+                p_str = f" CPU:  {p.name} (P:{p.priority})" if p.priority is not None else f" CPU:  {p.name}"
+                order_parts.append(p_str)
+            
+            queue_parts: list[str] = []
+            for idx_p, process in enumerate(snapshot, start=1):
+                p_str = f"#{idx_p} {process.name} (P:{process.priority})" if process.priority is not None else f"#{idx_p} {process.name}"
+                queue_parts.append(p_str)
 
+            if queue_parts:
+                order_parts.append("Cola: [" + ", ".join(queue_parts) + "]")
+
+            if order_parts:
+                order_label.configure(text="Estado actual: " + " | ".join(order_parts), foreground="#dce6f2")
+            else:
+                order_label.configure(text="Estado actual: (vacía)", foreground="#9fb0c2")
+
+            # 1. Proceso ejecutándose actualmente en CPU (distinto visualmente)
             if self.engine.current_process is not None and self.engine.current_queue == queue_index:
                 running = self.engine.current_process
-                card = tb.Frame(lane, width=130, height=64)
+                card = tb.Frame(lane, width=135, height=64)
                 card.pack_propagate(False)
                 card.pack(side="left", padx=4, pady=2)
 
-                if running.priority is not None:
-                    tb.Label(
-                        card,
-                        text=f"★ PRIORIDAD: {running.priority}",
-                        font=("Segoe UI", 8, "bold"),
-                        background="#1e293b",
-                        foreground="#38bdf8",
-                        anchor="center",
-                    ).pack(fill="x")
+                tb.Label(
+                    card,
+                    text=" EN CPU",
+                    font=("Segoe UI", 8, "bold"),
+                    background="#0284c7",
+                    foreground="#ffffff",
+                    anchor="center",
+                ).pack(fill="x")
 
                 tb.Label(
                     card,
-                    text=f"1) ▶ {running.name}",
+                    text=f"▶ {running.name}",
                     font=("Segoe UI", 10, "bold"),
                     background=self.engine.process_color(running.name),
                     foreground="#ffffff",
                     anchor="center",
                 ).pack(fill="both", expand=True)
 
+                prio_txt = f"P:{running.priority} | " if running.priority is not None else ""
                 tb.Label(
                     card,
-                    text=f"CPU rest: {running.remaining_in_burst} u.t.",
+                    text=f"{prio_txt}Rest: {running.remaining_in_burst}",
                     font=("Segoe UI", 8),
                     background="#0f1720",
                     foreground="#9fb0c2",
                     anchor="center",
                 ).pack(fill="x")
 
-            base_index = 2 if (self.engine.current_process is not None and self.engine.current_queue == queue_index) else 1
-            for idx, process in enumerate(snapshot, start=base_index):
+            # 2. Procesos esperando en la Cola de Listos (numerados 1), 2), 3)...)
+            for idx, process in enumerate(snapshot, start=1):
                 card = tb.Frame(lane, width=130, height=64)
                 card.pack_propagate(False)
                 card.pack(side="left", padx=4, pady=2)
@@ -600,7 +601,7 @@ class MainWindow:
 
                 tb.Label(
                     card,
-                    text=f"{idx}) {process.name}",
+                    text=f"Cola #{idx}: {process.name}",
                     font=("Segoe UI", 10, "bold"),
                     background=self.engine.process_color(process.name),
                     foreground="#ffffff",
@@ -617,10 +618,14 @@ class MainWindow:
                 ).pack(fill="x")
 
             if not snapshot and not (self.engine.current_process is not None and self.engine.current_queue == queue_index):
-                tb.Label(lane, text="(sin procesos en cola)", foreground="#9fb0c2").pack(anchor="w")
+                tb.Label(lane, text="(sin procesos en esta cola)", foreground="#9fb0c2").pack(anchor="w")
 
-            # Full queue members stay visible
-            queue_members = [process for process in self.processes if process.queue_index == queue_index]
+          
+            queue_members = [
+                process for process in self.processes
+                if process.queue_index == queue_index
+                and process.state not in (ProcessState.RUNNING, ProcessState.BLOCKED, ProcessState.FINISHED)
+            ]
             for pos, process in enumerate(queue_members, start=1):
                 mem_text = f"{pos}. {process.name} (P:{process.priority})" if process.priority is not None else f"{pos}. {process.name}"
                 chip = tb.Label(
@@ -692,146 +697,222 @@ class MainWindow:
         for canvas in (self.algo_canvas, self.io_canvas, self.timeline_canvas):
             canvas.delete("all")
 
-        cpu_segments = self.engine.execution_segments
-        io_segments = self.engine.io_segments
+        cpu_segments  = self.engine.queue_entry_segments
+        io_segments   = self.engine.io_segments
+        process_by_name = {p.name: p for p in self.processes}
 
-        if not cpu_segments and not io_segments:
-            self.algo_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="El historial por algoritmo se construirá paso a paso.")
-            self.io_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="Las operaciones de E/S se mostrarán aquí.")
-            self.timeline_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="La línea de ejecución de CPU se mostrará aquí.")
-            return
+        # ──────────────────────────────────────────────────────────────
+        # 1. HISTORIAL POR ALGORITMO 
+        #
+        #  Todos los algoritmos (SJF, Prioridades, RR, FCFS) dibujan sus
+        #  bloques de forma CONSECUTIVA y SECUENCIAL desde el inicio (start_x),
+        #  sin líneas de tiempo verticales ni espacios en blanco.
+        #  En Round Robin, cada quantum ejecutado se muestra como un bloque
+        #  independiente consecutivo ([P3 4ut] [P3 2ut] [P3 2ut]).
+        # ──────────────────────────────────────────────────────────────
+        queue_names = {0: "SJF", 1: "Prioridades", 2: "RR", 3: "FCFS"}
+        row_h    = 95     # altura total por fila
+        box_w    = 64     # ancho del bloque
+        box_h    = 44     # alto del bloque
+        box_gap  = 10     # hueco entre bloques
+        label_x  = 10
+        start_x  = 155
+        max_right = start_x
 
-        process_by_name = {process.name: process for process in self.processes}
-        unit_width = 35
-
-        # ---- 1. HISTORIAL DE EJECUCIÓN POR ALGORITMO (CUADERNO) ----
-        queue_names = {
-            0: "SJF",
-            1: "Prioridades",
-            2: "RR",
-            3: "FCFS",
-        }
-        row_y_starts = {0: 25, 1: 115, 2: 205, 3: 295}
-        box_width = 54
-        start_x = 160
-        max_blocks_in_row = 0
+        cpu_proc  = self.engine.current_process
+        cpu_queue = self.engine.current_queue
+        blocked_names = {item.process.name for item in self.engine.blocked}
 
         for q_idx in range(4):
-            y_start = row_y_starts[q_idx]
-            q_name = queue_names[q_idx]
+            y_top     = 10 + q_idx * row_h
+            y_box_top = y_top + 22
+            q_name    = queue_names[q_idx]
 
-            # Nombre del algoritmo
+            # Etiqueta del algoritmo
             self.algo_canvas.create_text(
-                10, y_start + 25, anchor="w",
+                label_x, y_box_top + box_h // 2, anchor="w",
                 fill="#38bdf8", font=("Segoe UI", 11, "bold"),
                 text=f"{q_name}  ➔"
             )
 
-            q_segments = [s for s in cpu_segments if s.queue_index == q_idx]
-            max_blocks_in_row = max(max_blocks_in_row, len(q_segments))
+            # Obtener segmentos ejecutados para esta cola
+            q_segs = [s for s in cpu_segments if s.queue_index == q_idx]
+            waiting_snap = self.engine.queue_snapshot(q_idx)
 
-            if not q_segments:
+            block_index = 0
+            if not q_segs and not waiting_snap and not (cpu_proc is not None and cpu_queue == q_idx):
                 self.algo_canvas.create_text(
-                    start_x, y_start + 25, anchor="w",
+                    start_x, y_box_top + box_h // 2, anchor="w",
                     fill="#64748b", font=("Segoe UI", 9, "italic"),
-                    text="(sin ejecuciones en esta cola)"
+                    text="(ningún proceso ha ingresado a esta cola)"
                 )
                 continue
 
-            for idx, seg in enumerate(q_segments):
-                x1 = start_x + idx * (box_width + 8)
-                x2 = x1 + box_width
-                duration = seg.end - seg.start
+            # ----------------------------------------------------------------
+            # For SJF (queue 0):
+            # block (cada proceso aparece una sola vez).
+            # ----------------------------------------------------------------
+            if q_idx == 0:
+              
+                seg_lookup: dict[tuple[str, int], object] = {}
+                for seg in q_segs:
+                    key = (seg.process_name, getattr(seg, 'burst_index', 0))
+                    seg_lookup[key] = seg
 
+                drawn_keys: set[tuple[str, int]] = set()
+                ordered_segs = []
+                for (qi, pname, bidx) in self.engine.queue_ready_order:
+                    if qi != 0:
+                        continue
+                    key = (pname, bidx)
+                    if key in drawn_keys:
+                        continue
+                    drawn_keys.add(key)
+                    if key in seg_lookup:
+                        ordered_segs.append(seg_lookup[key])
+
+                for seg in q_segs:
+                    key = (seg.process_name, getattr(seg, 'burst_index', 0))
+                    if key not in drawn_keys:
+                        drawn_keys.add(key)
+                        ordered_segs.append(seg)
+
+                segs_to_draw = ordered_segs
+            elif q_idx == 2:
+                # RR: cada ronda de quantum = 1 bloque (individual, sin fusionar)
+                segs_to_draw = q_segs
+            else:
+                # Prioridades (1) & FCFS (3): aggregate by (name, burst_index)
+                # Misma rafaga (desalojo) -> se fusiona en 1 bloque
+                # Distinta rafaga (retorno E/S) -> bloque separado
+                burst_totals: dict[tuple[str, int], int] = {}
+                for seg in q_segs:
+                    key = (seg.process_name, seg.burst_index)
+                    burst_totals[key] = burst_totals.get(key, 0) + seg.duration
+              
+                seen_keys: set[tuple[str, int]] = set()
+                merged_segs: list[ExecutionSegment] = []
+                for seg in q_segs:
+                    key = (seg.process_name, seg.burst_index)
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        total_dur = burst_totals[key]
+                        merged_segs.append(ExecutionSegment(
+                            seg.process_name, 0, total_dur,
+                            queue_index=seg.queue_index,
+                            priority=seg.priority,
+                            burst_index=seg.burst_index,
+                            info_value=seg.info_value,
+                        ))
+                segs_to_draw = merged_segs
+
+            for seg in segs_to_draw:
+                proc = process_by_name.get(seg.process_name)
                 color = self.engine.process_color(seg.process_name)
+                dur = seg.end - seg.start
+                x1  = start_x + block_index * (box_w + box_gap)
+                x2  = x1 + box_w
+                cx  = (x1 + x2) / 2
 
-                # Prioridad arriba del bloque si es Cola 1
-                if q_idx == 1 and seg.priority is not None:
+                is_active = (cpu_proc is not None and cpu_queue == q_idx and cpu_proc.name == seg.process_name and seg is segs_to_draw[-1])
+                outline_c = "#38bdf8" if is_active else "#0f1720"
+                outline_w = 3 if is_active else 1.5
+
+                if is_active:
                     self.algo_canvas.create_text(
-                        (x1 + x2) / 2, y_start + 4,
-                        text=str(seg.priority),
-                        fill="#38bdf8", font=("Segoe UI", 10, "bold")
+                        cx, y_box_top - 5, anchor="s",
+                        text="▶ CPU", fill="#38bdf8", font=("Segoe UI", 8, "bold")
                     )
 
-                # Bloque del proceso
+                # Número de prioridad arriba (solo cola 1 - Prioridades)
+                if q_idx == 1 and seg.priority is not None:
+                    self.algo_canvas.create_text(
+                        cx, y_box_top - 2, anchor="s",
+                        text=str(seg.priority), fill="#38bdf8",
+                        font=("Segoe UI", 8, "bold")
+                    )
+
                 self.algo_canvas.create_rectangle(
-                    x1, y_start + 16, x2, y_start + 46,
-                    fill=color, outline="#0f1720", width=1.5
+                    x1, y_box_top, x2, y_box_top + box_h,
+                    fill=color, outline=outline_c, width=outline_w
                 )
                 self.algo_canvas.create_text(
-                    (x1 + x2) / 2, y_start + 31,
-                    text=seg.process_name,
-                    fill="#0f1720", font=("Segoe UI", 10, "bold")
+                    cx, y_box_top + box_h // 2,
+                    text=seg.process_name, fill="#ffffff", font=("Segoe UI", 10, "bold")
                 )
 
-                # Duración ejecutada abajo
-                self.algo_canvas.create_text(
-                    (x1 + x2) / 2, y_start + 58,
-                    text=str(duration),
-                    fill="#dce6f2", font=("Segoe UI", 10, "bold")
-                )
+                # Valor fijo debajo del bloque (info_value del segmento)
+                if seg.info_value > 0:
+                    self.algo_canvas.create_text(
+                        cx, y_box_top + box_h + 2, anchor="n",
+                        text=str(seg.info_value), fill="#dce6f2",
+                        font=("Segoe UI", 8)
+                        )
 
-        algo_width = max(800, start_x + max_blocks_in_row * 65 + 60)
-        self.algo_canvas.configure(scrollregion=(0, 0, algo_width, 380))
+                max_right = max(max_right, x2 + 20)
+                block_index += 1
 
-        # ---- 2. DIAGRAMA DE E/S (O E/S idéntico al cuaderno - Procesos juntos) ----
-        offset_x = 40
+        algo_w = max(900, max_right + 40)
+        algo_h = 10 + 4 * row_h + 30
+        self.algo_canvas.configure(scrollregion=(0, 0, algo_w, algo_h))
+
+
+        # ---- 2. DIAGRAMA DE E/S ----
+        box_offset_x = 40
         box_width = 54
-        box_gap = 8
+        box_gap_io = 8
 
         if not io_segments:
             self.io_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="Sin operaciones de Entrada/Salida en ejecución.")
         else:
-            # Dibujar ráfagas de E/S contiguas (JUNTAS, sin separaciones estériles)
             for idx, segment in enumerate(io_segments):
-                x1 = offset_x + idx * (box_width + box_gap)
+                x1 = box_offset_x + idx * (box_width + box_gap_io)
                 x2 = x1 + box_width
                 duration = segment.end - segment.start
                 exit_time = segment.end
 
-                # Bloque E/S
                 io_color = self.engine.process_color(segment.process_name)
                 self.io_canvas.create_rectangle(x1, 10, x2, 38, fill=io_color, outline="#0f1720", width=1.5)
                 self.io_canvas.create_text((x1 + x2) / 2, 24, text=segment.process_name, fill="#ffffff", font=("Segoe UI", 10, "bold"))
 
-                # Líneas de división verticales
                 self.io_canvas.create_line(x1, 8, x1, 76, fill="#475569")
                 self.io_canvas.create_line(x2, 8, x2, 76, fill="#475569")
 
-                # Línea 1 debajo del bloque: Duración de E/S
                 self.io_canvas.create_text((x1 + x2) / 2, 47, text=str(duration), fill="#dce6f2", font=("Segoe UI", 9, "bold"))
 
-                # Línea 2 debajo del bloque: Círculo con el instante de salida de E/S
                 cx = (x1 + x2) / 2
                 cy = 66
                 r = 10
                 self.io_canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#38bdf8", width=1.5)
                 self.io_canvas.create_text(cx, cy, text=str(exit_time), fill="#38bdf8", font=("Segoe UI", 9, "bold"))
 
-            io_width = max(800, offset_x + len(io_segments) * (box_width + box_gap) + 60)
+            io_width = max(800, box_offset_x + len(io_segments) * (box_width + box_gap_io) + 60)
             self.io_canvas.configure(scrollregion=(0, 0, io_width, 95))
 
-        # ---- 3. CPU LÍNEA DE EJECUCIÓN (Tiempos nítidos sin corte vertical) ----
-        if not cpu_segments:
-            self.timeline_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="Sin ejecución de CPU.")
+        # ---- 3. CPU LÍNEA DE EJECUCIÓN (cronológica, eje del tiempo) ----
+        tl_segments = self.engine.cpu_timeline_segments
+        if not tl_segments:
+            self.timeline_canvas.create_text(20, 20, anchor="nw", fill="#9fb0c2", text="La línea de ejecución de CPU se mostrará aquí.")
         else:
-            unit_width = 55  # Ancho por unidad holgado
-            offset_x = 40
+            unit_width = 55
+            offset_x_cpu = 160
 
-            for segment in cpu_segments:
-                x1 = offset_x + segment.start * unit_width
-                x2 = offset_x + segment.end * unit_width
+            for i, segment in enumerate(tl_segments):
+                x1 = offset_x_cpu + segment.start * unit_width
+                is_last = (i == len(tl_segments) - 1)
+                # Dejar 2px de separacion entre bloques para que se vea el limite
+                x2 = offset_x_cpu + segment.end * unit_width - (0 if is_last else 2)
                 color = self.engine.process_color(segment.process_name)
                 self.timeline_canvas.create_rectangle(x1, 10, x2, 40, fill=color, outline="#0f1720", width=1.5)
-                self.timeline_canvas.create_text((x1 + x2) / 2, 25, text=segment.process_name, fill="#0f1720", font=("Segoe UI", 10, "bold"))
+                self.timeline_canvas.create_text((x1 + x2) / 2, 25, text=segment.process_name, fill="#ffffff", font=("Segoe UI", 10, "bold"))
 
-            # Marcas numéricas de CPU con alternancia de posición Y para evitar cualquier solapamiento y corte
-            cpu_boundary_times = sorted(set([0] + [s.start for s in cpu_segments] + [s.end for s in cpu_segments]))
+            # Ticks solo al INICIO de cada segmento + final del ultimo
+            cpu_boundary_times = sorted(set([0] + [s.start for s in tl_segments] + [tl_segments[-1].end]))
             last_x = -100
             alt_toggle = False
 
             for tick in cpu_boundary_times:
-                x = offset_x + tick * unit_width
+                x = offset_x_cpu + tick * unit_width
                 self.timeline_canvas.create_line(x, 8, x, 42, fill="#475569", width=1.5)
 
                 if x - last_x < 34:
@@ -846,93 +927,12 @@ class MainWindow:
                 self.timeline_canvas.create_text(x, text_y, text=str(tick), fill="#ffffff", font=("Segoe UI", 10, "bold"))
                 last_x = x
 
-            max_time_cpu = max(s.end for s in cpu_segments) if cpu_segments else 0
-            timeline_width = max(800, offset_x + max_time_cpu * unit_width + 80)
+            max_time_cpu = max(s.end for s in tl_segments)
+            timeline_width = max(800, offset_x_cpu + max_time_cpu * unit_width + 80)
             self.timeline_canvas.configure(scrollregion=(0, 0, timeline_width, 100))
 
     def _refresh_algo_history(self) -> None:
-        self.algo_canvas.delete("all")
-
-        cpu_segments = self.engine.execution_segments
-        if not cpu_segments:
-            self.algo_canvas.create_text(
-                20, 20, anchor="nw", fill="#9fb0c2",
-                text="El historial por algoritmo se irá construyendo paso a paso a medida que los procesos ejecuten CPU."
-            )
-            return
-
-        process_by_name = {process.name: process for process in self.processes}
-        queue_names = {
-            0: "SJF",
-            1: "Prioridades",
-            2: "RR",
-            3: "FCFS",
-        }
-
-        row_y_starts = {0: 30, 1: 130, 2: 230, 3: 330}
-        box_width = 54
-        start_x = 180
-
-        max_blocks_in_row = 0
-
-        for q_idx in range(4):
-            y_start = row_y_starts[q_idx]
-            q_name = queue_names[q_idx]
-
-            # Nombre de la fila de algoritmo
-            self.algo_canvas.create_text(
-                10, y_start + 25, anchor="w",
-                fill="#38bdf8", font=("Segoe UI", 11, "bold"),
-                text=f"{q_name}  ➔"
-            )
-
-            # Filtrar ráfagas de CPU de esta cola
-            q_segments = [s for s in cpu_segments if s.queue_index == q_idx]
-            max_blocks_in_row = max(max_blocks_in_row, len(q_segments))
-
-            if not q_segments:
-                self.algo_canvas.create_text(
-                    start_x, y_start + 25, anchor="w",
-                    fill="#64748b", font=("Segoe UI", 9, "italic"),
-                    text="(sin ejecuciones aún)"
-                )
-                continue
-
-            for idx, seg in enumerate(q_segments):
-                x1 = start_x + idx * (box_width + 8)
-                x2 = x1 + box_width
-                duration = seg.end - seg.start
-
-                color = self.engine.process_color(seg.process_name)
-
-                # Si es cola de Prioridades: Dibujar prioridad ARRIBA de la caja (idéntico al cuaderno)
-                if q_idx == 1 and seg.priority is not None:
-                    self.algo_canvas.create_text(
-                        (x1 + x2) / 2, y_start + 4,
-                        text=str(seg.priority),
-                        fill="#38bdf8", font=("Segoe UI", 10, "bold")
-                    )
-
-                # Bloque principal del proceso
-                self.algo_canvas.create_rectangle(
-                    x1, y_start + 16, x2, y_start + 46,
-                    fill=color, outline="#0f1720", width=1.5
-                )
-                self.algo_canvas.create_text(
-                    (x1 + x2) / 2, y_start + 31,
-                    text=seg.process_name,
-                    fill="#0f1720", font=("Segoe UI", 10, "bold")
-                )
-
-                # Duración ejecutada DEBAJO de la caja (idéntico al cuaderno: 10, 5, 8, 4...)
-                self.algo_canvas.create_text(
-                    (x1 + x2) / 2, y_start + 58,
-                    text=str(duration),
-                    fill="#dce6f2", font=("Segoe UI", 10, "bold")
-                )
-
-        canvas_width = max(850, start_x + max_blocks_in_row * 65 + 60)
-        self.algo_canvas.configure(scrollregion=(0, 0, canvas_width, 420))
+        self._refresh_gantt()
 
     def _refresh_console(self) -> None:
         self.console_text.configure(state="normal")
@@ -973,7 +973,7 @@ class MainWindow:
             sum_espera += tep
             count      += 1
 
-            # Formato similar al cuaderno
+            # Formato
             ejec_lines.append(
                 f"  ( {tfinal} - {llegada} )  =  {te}"
             )

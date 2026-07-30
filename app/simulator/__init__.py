@@ -1,1 +1,1 @@
-"""Simulation engine package."""
+"""Paquete del motor de simulación."""

@@ -1,4 +1,4 @@
-"""Modal dialog used to add or edit a process."""
+"""Diálogo modal para agregar o editar un proceso."""
 
 from __future__ import annotations
 
